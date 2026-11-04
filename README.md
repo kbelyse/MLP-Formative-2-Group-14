@@ -31,3 +31,11 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
+
+## Image features and face model
+
+```bash
+python -m src.train_face
+```
+
+This creates `features/image_features.csv` and `models/face_model.pkl`. The full steps with plots are in `notebooks/02_image_processing.ipynb`.
