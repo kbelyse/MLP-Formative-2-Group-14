@@ -5,7 +5,7 @@ seaborn
 scikit-learn
 xgboost
 joblib
-opencv-python
+opencv-python<5
 Pillow
 librosa
 soundfile
