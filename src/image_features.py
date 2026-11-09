@@ -8,7 +8,8 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 EXPRESSIONS = ["neutral", "smiling", "surprised"]
 FACE_SIZE = 128
 
-_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+DETECTOR_PATH = str(Path(__file__).resolve().parent.parent / "models" / "face_detection_yunet_2023mar.onnx")
+_detector = cv2.FaceDetectorYN.create(DETECTOR_PATH, "", (320, 320), 0.7)
 _hog = cv2.HOGDescriptor((FACE_SIZE, FACE_SIZE), (32, 32), (16, 16), (16, 16), 9)
 
 
@@ -23,19 +24,23 @@ def load_image(path, max_side=800):
     return img
 
 
-def detect_face(img, margin=0.2):
-    """Crop the largest detected face. Falls back to a centre crop if no face is found."""
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    faces = _cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(60, 60))
+def detect_face(img, margin=0.15):
+    """Square crop around the most confident face (YuNet detector).
+
+    Falls back to a centre crop if no face is found.
+    """
     h, w = img.shape[:2]
-    if len(faces) == 0:
+    _detector.setInputSize((w, h))
+    _, faces = _detector.detect(img)
+    if faces is None or len(faces) == 0:
         side = min(h, w)
         y0, x0 = (h - side) // 2, (w - side) // 2
         return img[y0:y0 + side, x0:x0 + side], False
-    x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
-    mx, my = int(fw * margin), int(fh * margin)
-    x0, y0 = max(x - mx, 0), max(y - my, 0)
-    x1, y1 = min(x + fw + mx, w), min(y + fh + my, h)
+    x, y, fw, fh = faces[faces[:, -1].argmax()][:4]
+    cx, cy = x + fw / 2, y + fh / 2
+    half = max(fw, fh) * (1 + margin) / 2
+    x0, y0 = int(max(cx - half, 0)), int(max(cy - half, 0))
+    x1, y1 = int(min(cx + half, w)), int(min(cy + half, h))
     return img[y0:y1, x0:x1], True
 
 
