@@ -39,3 +39,19 @@ python -m src.train_face
 ```
 
 This creates `features/image_features.csv` and `models/face_model.pkl`. The full steps with plots are in `notebooks/02_image_processing.ipynb`.
+
+## Audio features and voice model
+
+Each member has `data/audio/<member>/yes_approve.wav` and `confirm_transaction.wav`. New recordings (e.g. `.m4a` voice notes) are converted once with ffmpeg (`brew install ffmpeg`):
+
+```bash
+ffmpeg -i recording.m4a -ac 1 -ar 16000 data/audio/<member>/yes_approve.wav
+```
+
+Then:
+
+```bash
+python -m src.train_voice
+```
+
+This creates `features/audio_features.csv` and `models/voice_model.pkl`. Waveforms, spectrograms, augmentations and the model evaluation are in `notebooks/03_audio_processing.ipynb`. The unauthorized voice sample goes in `data/unauthorized/audio/`.
