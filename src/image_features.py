@@ -6,11 +6,13 @@ import pandas as pd
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png"}
 EXPRESSIONS = ["neutral", "smiling", "surprised"]
-FACE_SIZE = 128
+FACE_SIZE = 112
+EMBEDDING_SIZE = 128
 
-DETECTOR_PATH = str(Path(__file__).resolve().parent.parent / "models" / "face_detection_yunet_2023mar.onnx")
-_detector = cv2.FaceDetectorYN.create(DETECTOR_PATH, "", (320, 320), 0.7)
-_hog = cv2.HOGDescriptor((FACE_SIZE, FACE_SIZE), (32, 32), (16, 16), (16, 16), 9)
+MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+# YuNet finds the face and its landmarks; SFace turns an aligned face into a 128-number embedding.
+_detector = cv2.FaceDetectorYN.create(str(MODELS_DIR / "face_detection_yunet_2023mar.onnx"), "", (320, 320), 0.7)
+_recognizer = cv2.FaceRecognizerSF.create(str(MODELS_DIR / "face_recognition_sface_2021dec.onnx"), "")
 
 
 def load_image(path, max_side=800):
@@ -24,8 +26,8 @@ def load_image(path, max_side=800):
     return img
 
 
-def detect_face(img, margin=0.15):
-    """Square crop around the most confident face (YuNet detector).
+def detect_face(img):
+    """Aligned 112x112 crop of the most confident face (eyes levelled using the landmarks).
 
     Falls back to a centre crop if no face is found.
     """
@@ -35,13 +37,10 @@ def detect_face(img, margin=0.15):
     if faces is None or len(faces) == 0:
         side = min(h, w)
         y0, x0 = (h - side) // 2, (w - side) // 2
-        return img[y0:y0 + side, x0:x0 + side], False
-    x, y, fw, fh = faces[faces[:, -1].argmax()][:4]
-    cx, cy = x + fw / 2, y + fh / 2
-    half = max(fw, fh) * (1 + margin) / 2
-    x0, y0 = int(max(cx - half, 0)), int(max(cy - half, 0))
-    x1, y1 = int(min(cx + half, w)), int(min(cy + half, h))
-    return img[y0:y1, x0:x1], True
+        crop = img[y0:y0 + side, x0:x0 + side]
+        return cv2.resize(crop, (FACE_SIZE, FACE_SIZE)), False
+    face = faces[faces[:, -1].argmax()]
+    return _recognizer.alignCrop(img, face), True
 
 
 def rotate(img, angle):
@@ -69,25 +68,25 @@ def augment(face):
 
 
 def extract_features(face):
-    """HOG features + HSV colour histogram + grayscale intensity histogram."""
+    """Face embedding (SFace) + HSV colour histogram + grayscale intensity histogram."""
     face = cv2.resize(face, (FACE_SIZE, FACE_SIZE), interpolation=cv2.INTER_AREA)
-    gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
-    hog = _hog.compute(gray).ravel()
+    emb = _recognizer.feature(face).ravel()
+    emb = emb / (np.linalg.norm(emb) + 1e-8)
 
     hsv = cv2.cvtColor(face, cv2.COLOR_BGR2HSV)
     hists = []
     for ch, top in zip(range(3), [180, 256, 256]):
         hist = cv2.calcHist([hsv], [ch], None, [16], [0, top]).ravel()
         hists.append(hist / (hist.sum() + 1e-8))
+    gray = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
     gray_hist = cv2.calcHist([gray], [0], None, [32], [0, 256]).ravel()
     gray_hist = gray_hist / (gray_hist.sum() + 1e-8)
 
-    return np.concatenate([hog, *hists, gray_hist])
+    return np.concatenate([emb, *hists, gray_hist])
 
 
 def feature_names():
-    n_hog = _hog.getDescriptorSize()
-    names = [f"hog_{i}" for i in range(n_hog)]
+    names = [f"emb_{i}" for i in range(EMBEDDING_SIZE)]
     for ch in ["h", "s", "v"]:
         names += [f"hist_{ch}_{i}" for i in range(16)]
     names += [f"hist_gray_{i}" for i in range(32)]
