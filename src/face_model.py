@@ -4,7 +4,6 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, log_loss
-from sklearn.metrics.pairwise import cosine_distances
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from xgboost import XGBClassifier
@@ -12,6 +11,10 @@ from xgboost import XGBClassifier
 from src.image_features import image_to_features
 
 META_COLS = ["member", "expression", "source_file", "augmentation"]
+
+
+def embedding_cols(df):
+    return [c for c in df.columns if c.startswith("emb_")]
 
 
 def candidate_models():
@@ -22,13 +25,14 @@ def candidate_models():
     }
 
 
-def evaluate(df):
+def evaluate(df, cols=None):
     """Leave-one-expression-out: train on two expressions, test on the third.
 
     Augmented copies of a photo always stay with that photo, so the test
     images are never seen in training in any form.
     """
-    X = df.drop(columns=META_COLS).values
+    cols = cols or embedding_cols(df)
+    X = df[cols].values
     enc = LabelEncoder()
     y = enc.fit_transform(df["member"])
     labels = np.arange(len(enc.classes_))
@@ -55,7 +59,7 @@ def evaluate(df):
 
 def held_out_predictions(df, model_name):
     """True and predicted member for every row, each predicted by a model that never saw that photo."""
-    X = df.drop(columns=META_COLS).values
+    X = df[embedding_cols(df)].values
     enc = LabelEncoder()
     y = enc.fit_transform(df["member"])
     pred = np.empty_like(y)
@@ -67,45 +71,49 @@ def held_out_predictions(df, model_name):
     return enc.inverse_transform(y), enc.inverse_transform(pred)
 
 
-def genuine_distances(df):
-    """Distance from each held-out photo to the closest training image of the same member."""
-    X = df.drop(columns=META_COLS).values
-    y = df["member"].values
-    dists = []
+def held_out_similarities(df):
+    """Cosine similarity of each held-out photo to the closest training image of
+    the same member (genuine) and of every other member (impostor)."""
+    E = df[embedding_cols(df)].values
+    members = df["member"].values
+    genuine, impostor = [], []
     for held_out in sorted(df["expression"].unique()):
         train = (df["expression"] != held_out).values
         test = ((df["expression"] == held_out) & (df["augmentation"] == "original")).values
-        scaler = StandardScaler().fit(X[train])
-        d = cosine_distances(scaler.transform(X[test]), scaler.transform(X[train]))
+        sims = E[test] @ E[train].T
         for i, row in enumerate(np.where(test)[0]):
-            dists.append(d[i][y[train] == y[row]].min())
-    return np.array(dists)
+            for m in np.unique(members[train]):
+                best = sims[i][members[train] == m].max()
+                (genuine if m == members[row] else impostor).append(best)
+    return np.array(genuine), np.array(impostor)
 
 
-def train_final(df, model_name, confidences, distances):
-    X = df.drop(columns=META_COLS).values
+def train_final(df, model_name, confidences, genuine, impostor):
+    cols = embedding_cols(df)
+    X = df[cols].values
     enc = LabelEncoder()
     y = enc.fit_transform(df["member"])
     model = candidate_models()[model_name]
     model.fit(X, y)
 
-    # Reject faces the model is unsure about. The threshold sits below most
-    # correct predictions from cross-validation but above random guessing.
+    # Check 1: the classifier has to be reasonably sure.
     chance = 1 / len(enc.classes_)
     conf = confidences[model_name]
     threshold = float(np.percentile(conf, 10)) if len(conf) else 0.5
-    threshold = max(threshold, chance + 0.15)
+    threshold = max(min(threshold, 0.8), chance + 0.15)
 
-    # Second check: the new face must also be close to that member's own photos.
-    scaler = StandardScaler().fit(X)
+    # Check 2: the face has to look like that member's own photos. The cut-off sits
+    # halfway between the most similar pair of different members and the least
+    # similar pair of photos of the same member.
+    similarity_threshold = float((impostor.max() + genuine.min()) / 2)
+
     return {
         "model": model,
         "classes": list(enc.classes_),
         "threshold": threshold,
-        "scaler": scaler,
-        "reference": scaler.transform(X),
+        "reference": X,
         "reference_labels": y,
-        "distance_threshold": float(np.percentile(distances, 80)),
+        "similarity_threshold": similarity_threshold,
     }
 
 
@@ -118,15 +126,15 @@ def load(path="models/face_model.pkl"):
 
 
 def predict_face(image_path, bundle):
-    """Return (member, confidence, distance). member is None when the face is not recognised."""
-    x = image_to_features(image_path)
+    """Return (member, confidence, similarity). member is None when the face is not recognised."""
+    x = image_to_features(image_path)[:, :bundle["reference"].shape[1]]
     proba = bundle["model"].predict_proba(x)[0]
     best = int(proba.argmax())
     confidence = float(proba[best])
 
-    d = cosine_distances(bundle["scaler"].transform(x), bundle["reference"])[0]
-    distance = float(d[bundle["reference_labels"] == best].min())
+    sims = bundle["reference"] @ x[0]
+    similarity = float(sims[bundle["reference_labels"] == best].max())
 
-    if confidence < bundle["threshold"] or distance > bundle["distance_threshold"]:
-        return None, confidence, distance
-    return bundle["classes"][best], confidence, distance
+    if confidence < bundle["threshold"] or similarity < bundle["similarity_threshold"]:
+        return None, confidence, similarity
+    return bundle["classes"][best], confidence, similarity

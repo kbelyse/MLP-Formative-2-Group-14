@@ -22,12 +22,12 @@ def main():
     print(summary.round(3))
 
     best = summary["f1"].idxmax()
-    distances = face_model.genuine_distances(df)
-    bundle = face_model.train_final(df, best, confidences, distances)
+    genuine, impostor = face_model.held_out_similarities(df)
+    bundle = face_model.train_final(df, best, confidences, genuine, impostor)
     face_model.save(bundle, MODEL_PATH)
     print(f"\nBest model: {best}. Saved to {MODEL_PATH}")
     print(f"Confidence threshold: {bundle['threshold']:.3f}, "
-          f"distance threshold: {bundle['distance_threshold']:.3f}")
+          f"similarity threshold: {bundle['similarity_threshold']:.3f}")
 
 
 if __name__ == "__main__":
