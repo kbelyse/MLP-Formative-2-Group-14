@@ -13,6 +13,10 @@ A user must first be recognised by their face. Their voice is then checked again
 - Sandrine Umugwaneza
 - Belyse Kalisa Teta Yamwakate
 
+## Demo video
+
+[System simulation video](https://drive.google.com/file/d/1PXs7F1UCw0I-TUVWAv9WYofmf42XTlbf/view?usp=sharing)
+
 ## Project structure
 
 - `data/raw/` - Customer social profiles and transaction datasets
@@ -59,7 +63,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-The saved models were developed using specific library versions. Use compatible versions of scikit-learn and OpenCV when running the saved models. scikit-learn 1.9.1.
+The saved models were trained with scikit-learn 1.9.1 and OpenCV 4 (`opencv-python<5`). Both versions are pinned in `requirements.txt`, so installing from it gives a working setup.
 
 ## Running the integrated application
 
@@ -70,8 +74,7 @@ Run it from the repository root:
 ```bash
 python app/main.py --image data/images/belyse/neutral.jpg --audio data/audio/belyse/yes_approve.wav
 ```
-stranger-voice example: python app/main.py --image data/images/kyla/neutral.jpg --audio data/unauthorized/audio/unauthorized.wav
-which gives DENIED.
+
 The application accepts two arguments:
 
 - `--image`: Path to the user's facial image.
@@ -101,6 +104,22 @@ python app/main.py --image data/images/kyla/neutral.jpg --audio data/audio/belys
 ```
 
 Expected outcome: access is denied because the face and voice identities do not match.
+
+### Example: unauthorized face
+
+```bash
+python app/main.py --image data/unauthorized/images/person_03.jpg --audio data/audio/belyse/yes_approve.wav
+```
+
+Expected outcome: access is denied because the face does not belong to a registered member.
+
+### Example: unauthorized voice
+
+```bash
+python app/main.py --image data/images/kyla/neutral.jpg --audio data/unauthorized/audio/unauthorized.wav
+```
+
+Expected outcome: access is denied because the voice does not match the recognised face.
 
 ### Simulated customer ID mapping
 
