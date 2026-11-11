@@ -59,7 +59,7 @@ Install dependencies:
 pip install -r requirements.txt
 ```
 
-The saved models were developed using specific library versions. Use compatible versions of scikit-learn and OpenCV when running the saved models. The team should confirm the model-training environment before reproducing the installation.
+The saved models were developed using specific library versions. Use compatible versions of scikit-learn and OpenCV when running the saved models. scikit-learn 1.9.1.
 
 ## Running the integrated application
 
@@ -70,7 +70,8 @@ Run it from the repository root:
 ```bash
 python app/main.py --image data/images/belyse/neutral.jpg --audio data/audio/belyse/yes_approve.wav
 ```
-
+stranger-voice example: python app/main.py --image data/images/kyla/neutral.jpg --audio data/unauthorized/audio/unauthorized.wav
+which gives DENIED.
 The application accepts two arguments:
 
 - `--image`: Path to the user's facial image.
